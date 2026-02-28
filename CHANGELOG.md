@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.5
+
+* [@Paradox-Evil-EXE]: Calling `.start()` on your emulated LEGO hub does not break your `pCharacteristic`, so you can still control the hub without restarting the whole BLE device
+
 ## 1.2.4
 
 * Re-release of 1.2.3 with updated Nix support and removal of large package-index files from the repository.
