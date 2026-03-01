@@ -29,6 +29,7 @@ public:
   static int32_t ReadInt32LE(uint8_t *data, int offset);
   static std::string ColorStringFromColor(Color color);
   static std::string ColorStringFromColor(int color);
+  static std::string HexString(std::string str);
 };
 
 #endif // LegoinoCommon_h

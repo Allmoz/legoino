@@ -13,18 +13,24 @@ It is also possible to use the "old" Power Function IR Modules and control them 
 
 ## About this fork
 
-This repository is forked from https://github.com/corneliusmunz/legoino, primarily to add support for [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) version 2.x . It also fixes some build errors for `esp32:esp32:XIAO_ESP32C3` and adds Nix support to the examples via https://github.com/bouk/arduino-nix .
+This repository is forked from https://github.com/corneliusmunz/legoino, primarily to add support for [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) (tested with 2.3.7). It also fixes some build errors for `esp32:esp32:XIAO_ESP32C3` and adds Nix support to the examples via https://github.com/bouk/arduino-nix .
 
+### NimBLE 2.x changes in `Lpf2Hub.cpp`
+
+- **Scan API**: `pBLEScan->start()` replaced with blocking `pBLEScan->getResults()` (NimBLE 2.x `start()` is non-blocking)
+- **Scan duration**: Converted from seconds to milliseconds (NimBLE 2.x API change)
+- **Scan callbacks**: Added `onDiscovered()` alongside `onResult()` (NimBLE 2.x fires `onDiscovered()` first for advertisements, `onResult()` after scan response)
+- **Disconnect callback**: `onDisconnect()` signature updated with `int reason` parameter (required by NimBLE 2.x)
+- **Race condition fix**: `_isConnecting` set before `stop()` in scan callback to prevent main task from rescanning before state is updated
+- **Duplicate filtering**: `clearResults()` called before each scan to avoid stale results
 
 ## Arduino Hardware and dependent libraries
 
 The library is implemented for **ESP32** boards and uses the ESP32 [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) library as dependency. This should be installed via the Arduino library manager before using Legoino.
 
-
 ## Quickstart
 
 You can find a step by step instruction to your first Legoino project on the following link: [Quickstart Tutorial](doc/QUICKSTART.md)
-
 
 ## Breaking Changes
 
@@ -34,7 +40,6 @@ So have a look at the changes and adapt your sketches to the new callbacks. You 
 [Migration Guide](doc/MIGRATION.md)
 
 If you have questions regarding the migration of your sketches, don't hesitate to use the [![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/legoinochat?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) chat.
-
 
 ## Usage Videos
 
@@ -55,35 +60,32 @@ Simple Boost movement example (just click the image to see the video)
 Simple Hub Emulation example as Bridge from PoweredUp to PowerFunction. With this you have an upgrade of your PowerFunction system and it works like a two Port PoweredUp hub.
 [![Legoino Hub Emulation example](http://img.youtube.com/vi/RTNexxT4-yQ/mqdefault.jpg)](https://www.youtube.com/watch?v=RTNexxT4-yQ "Legoino Hub Emulation example")
 
-
-# Examples
+## Examples
 
 All the included examples are a great source to find a solution or pattern for your problem you want to solve with your Arduino sketch.
 
 You can find different examples in the "examples" folder. You can select the examples in your Arduino IDE via the Menu "File->Examples". Just have a look on the videos to see the examples running :smiley:
-* **Boost.ino:** Example which uses the basic Boost movements (usable with M.T.R. 4 or Vernie model). http://www.youtube.com/watch?v=VgWObhyUmi0
-* **ColorSensor.ino:** Example which reads in the color sensor value (attached to an arbitrary port) and uses the detected color to set the Hub LED accordingly. https://youtu.be/_xCd9Owy1nk
+
+* **Boost.ino:** Example which uses the basic Boost movements (usable with M.T.R. 4 or Vernie model). <http://www.youtube.com/watch?v=VgWObhyUmi0>
+* **ColorSensor.ino:** Example which reads in the color sensor value (attached to an arbitrary port) and uses the detected color to set the Hub LED accordingly. <https://youtu.be/_xCd9Owy1nk>
 * **MoveHubDeviceInfo.ino:** Example which displays the various device infos (firmware version, battery level, RSSI, hardware version, tilt) in the serial monitor.
-* **DistanceSensor.ino:** Example which reads in the input of the distance sensor and sets the Hub LED color dependent on the distance. https://youtu.be/TOAQtGGjZ6c
-* **RotationSensor.ino:** Example which reads in the input of the Tacho motor angle to set the Hub LED dependent on the angle to the scale of rainbow colors. https://youtu.be/c3DHpX55uN0
-* **TrainHub.ino:** Example for a PowererdUp Hub to set the speed of a train model. http://www.youtube.com/watch?v=o1hgZQz3go4
-* **TrainColor.ino:** Example of PoweredUp Hub combined with color sensor to control the speed of the train dependent on the detected color. https://youtu.be/GZ0fqe3-Bhw
-* **HubEmulation.ino:** Example of an emulated PoweredUp Hub two port hub (train hub) which could receive signals from the PoweredUp app and will send out the signals as IR commands to a Powerfunction remote receiver. https://www.youtube.com/watch?v=RTNexxT4-yQ
+* **DistanceSensor.ino:** Example which reads in the input of the distance sensor and sets the Hub LED color dependent on the distance. <https://youtu.be/TOAQtGGjZ6c>
+* **RotationSensor.ino:** Example which reads in the input of the Tacho motor angle to set the Hub LED dependent on the angle to the scale of rainbow colors. <https://youtu.be/c3DHpX55uN0>
+* **TrainHub.ino:** Example for a PowererdUp Hub to set the speed of a train model. <http://www.youtube.com/watch?v=o1hgZQz3go4>
+* **TrainColor.ino:** Example of PoweredUp Hub combined with color sensor to control the speed of the train dependent on the detected color. <https://youtu.be/GZ0fqe3-Bhw>
+* **HubEmulation.ino:** Example of an emulated PoweredUp Hub two port hub (train hub) which could receive signals from the PoweredUp app and will send out the signals as IR commands to a Powerfunction remote receiver. <https://www.youtube.com/watch?v=RTNexxT4-yQ>
 * **PoweredUpRemoteAutoDetection.ino:** Example of connection of PoweredUp and PoweredUpRemote where the device type is fetched automatically and the order in which you switched on the hubs is no longer relevant.
 * **ControlPlusHub.ino:** Example with connection of ControlPlusHub (TechnicHub) where a Tacho Motor on Port D is controlled.
 * **Mario.ino** Example of connection to a Mario Hub to read in sensor notifications about the Barcode/Tag sensor, Color sensor, Pants sensor and Gesture sensor.
 * **ESP32EmulatedHubControlPlus.ino** Example of an emulated Control+ Hub.
 
-
-# Setup and Usage
+## Setup and Usage
 
 Just install the library via the Arduino Library Manager.
-
 
 ## First example
 
 Just have a look on the [Quickstart Tutorial](doc/QUICKSTART.md).
-
 
 ## Connection procedure
 
@@ -93,13 +95,14 @@ Now you are ready to connect to the hub with the command `myHub.connectHub();`
 
 If the library changes the state to `myHub.isConnected() == true` you are ready to go and do some cool stuff :grin:
 
-
 In the ```setup``` part of your Arduino sketch, just initialize your Hub:
+
 ```c++
 myHub.init();
 ```
 
 In the main ```loop``` just add the following connection flow:
+
 ```c++
   if (myHub.isConnecting()) {
     myHub.connectHub();
@@ -110,7 +113,6 @@ In the main ```loop``` just add the following connection flow:
     }
   }
 ```
-
 
 ## Motor Commands
 
@@ -135,7 +137,6 @@ There are different types of motors in the *LEGO* ecosystem. The Basic Motor (e.
   void setAbsoluteMotorPosition(byte port, int speed, int32_t position, byte maxPower = 100, BrakingStyle brakingStyle = BrakingStyle::BRAKE);
   void setAbsoluteMotorEncoderPosition(byte port, int32_t position);
   ```
-
 
 ## Hub Commands
 
@@ -163,11 +164,9 @@ To control the Hub LEDs, you can use predefined color Variables in the `Color` e
 
 To get notified about sensor value updates (Button, Hub properties like voltage, RSSI, Tacho motor encoder, Speedometer, color sensor, distance sensor, ...), callback functions are used. After you read the following section you can also have a look into the examples which are included in the library. They are always a good source to find solutions/patterns for problems you want to solve.
 
-
 ### Callbacks
 
 To use the callbacks you have to do the following steps. Part of the callback ist the reference of the hub instance. So you can use the hub instance which has triggered the callback function to control attached motors or devices.
-
 
 #### Write callback function for port devices
 
@@ -199,7 +198,6 @@ void tachoMotorCallback(void *hub, byte portNumber, DeviceType deviceType, uint8
 ```
 
 This function will be called when a value update appears and you can react on the new value. In this case the LED color changes dependent on the motor rotation.
-
 
 #### Write callback function for hub properties
 
@@ -247,7 +245,6 @@ void hubPropertyChangeCallback(void *hub, HubPropertyReference hubProperty, uint
 
 This function will be called when a value update appears and you can react on the new value. In this case it will check the hub button state (pressed, released) or the RSSI value has changed or the battery level has changed.
 
-
 ### Activate notifications
 
 To get calls to your callback functions you have to register or activate it for the properties you want to get informed about updates. This has to be done after the hub is connected (not before). If you want to register updates for several properties/sensors, just add a short delay (50-100ms) after each register/activate call.
@@ -293,7 +290,6 @@ if (portForDevice == 1)
     myHub.activatePortDevice(portB, colorDistanceSensorCallback);
 }
 ```
-
 
 ## Hub emulation
 
@@ -361,7 +357,6 @@ To signalize the app which devices are connected you have to send some commands 
   }
 ```
 
-
 ## PowerFunction IR
 
 To use the PowerFunction Infrared library you have to connect a IR-LED to your controller. The PowerFunction part of the Legoino library will work on different hardware architectures (AVR, ESP8266, ESP32). To instantiate a new object, you have to define on which pin the IR LED is connected. Additionally you can define the Power function channel which should be used. Pay attention, that the channel in the library starts with 0 and on the physical IR Lego controller it starts with 1. So if you want to control channel 1 of your physical device, you have to use channel 0 in the PowerFunction part of the library.
@@ -391,7 +386,6 @@ There is a helper function to convert speed values from `-100...100` to the disc
 PowerFunctionsPwm speedToPwm(byte speed);
 ```
 
-
 ## Boost
 
 The Boost functions are a higher level of abstraction for moving the Vernie or M.T.R. 4 model one step forward/back and rotate the model or move with an arc.
@@ -402,7 +396,6 @@ Add the following include in your *.ino sketch:
 #include "Boost.h"
 Boost myBoostHub;
 ```
-
 
 ### Basic movements (Vernie, M.T.R. 4)
 
@@ -440,10 +433,10 @@ myBoostHub.moveArc(270) // move with an arc for 270 degrees to the right (positi
 myBoostHub.moveArc(-90) // move with an arc for 90 degrees to the left (positive angles means right, negative means left)
 ```
 
-
 ## Mario Hub (#71360)
 
 With Legoino it is possible to connect to the Mario Hub and read out sensor values from the
+
 * Pant Sensor
 * Color and Tag/Barcode Sensor
 * Gesture Sensor
@@ -461,12 +454,11 @@ If you call `.start()` on your emulated lego hub, it does not break your `pChara
 
 It needs 1 GPIO device, [which is a button connected to GND and pin 26 (D26)](https://github.com/user-attachments/assets/fe139aff-25cf-4e10-b9f0-33fb2a114181).
 
-
-# Connection to more than 3 hubs
+## Connection to more than 3 hubs
 
 It is possible to connect to up to 9 hubs in parallel with a common ESP32 board. To enable the connection to more than 3 hubs, you have to change a single configuration of the NimBLE library. Just open the ```nimconfig.h``` file located in your Arduino library folder in the directory ```NimBLE-Arduino/src```. Open the file with an editor and change the following settings to your demands:
 
-```
+```c++
 /** @brief Sets the number of simultaneous connections (esp controller max is 9) */
 #define CONFIG_BT_NIMBLE_MAX_CONNECTIONS 3
 ```
@@ -476,24 +468,23 @@ Then close the Arduino environment and open it again to force the rebuild of the
 Note: the Nix-based examples use a patched version of NimBLE-Arduino to accomplish this automatically.
 
 
-# Debug Messages
+## Debug Messages
 
 The standard `log_d`, `log_w`, `log_xx` messages are used. The log levels could be set via the Arduino environment and the messages are sent to the serial monitor.
 
-
-# Credits
+## Credits
 
 Hands up to Lego, that they have recently open-sourced the Specification
-https://github.com/LEGO/lego-ble-wireless-protocol-docs
+<https://github.com/LEGO/lego-ble-wireless-protocol-docs>
 
 Thanks to [@JorgePe](https://github.com/JorgePe) and all contributors for the reverse engineering part
-https://github.com/JorgePe/BOOSTreveng
+<https://github.com/JorgePe/BOOSTreveng>
 
 Thanks to [@jakorten](https://github.com/jakorten) for his SWIFT iOS App
-https://github.com/jakorten/UpControl
+<https://github.com/jakorten/UpControl>
 
 Thanks [@nathankellenicki](https://github.com/nathankellenicki) for his brilliant structured node module
-https://github.com/nathankellenicki/node-poweredup
+<https://github.com/nathankellenicki/node-poweredup>
 
 Thanks to [@h2zero](https://github.com/h2zero/NimBLE-Arduino) for developing a new BLE library based on the NimBLE project and supporting Legoino with the possibility in changing the callback functions that it works also for member functions.
 
@@ -510,13 +501,13 @@ Thanks to [@Rbel12b](https://github.com/Rbel12b) for some extra changes for NimB
 Thanks to [@Paradox-Evil-EXE](https://github.com/Paradox-Evil-EXE) for adding the ESP32EmulatedHubControlPlus example.
 
 
-# Remarks
+## Remarks
 
 Prerequisite of that library is the NimBLE-Arduino library (https://github.com/h2zero/NimBLE-Arduino) with at least version 2.1.0. Otherwise the notifications of changed characteristic values will not work. So just install the version 2.x of that library via the Arduino Library manager or the platform.io library manager (https://www.arduinolibraries.info/libraries/nim-ble-arduino) as a prerequisite.
 
 Up to now the library is only tested for a Powered Up Train controllers, Boost controllers, Control+ Hubs, PoweredUp Remote, Duplo Train Hub and Mario Hub. You can connect to your Hub, set the LED color, set the Hub name, control the motors (speed, port, movements) and shut down the Hub via a Arduino command. You also are able to read in hub device infos (RSSI, battery level, tilt) and sensor values (color, distance, rotation angle).
 
+## ToDo
 
-# ToDo
 * Virtual Ports
 * HW Families

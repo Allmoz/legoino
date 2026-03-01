@@ -16,6 +16,20 @@
 
 #include "Lpf2HubEmulation.h"
 
+#include <sstream>
+#include <iomanip>
+
+std::string toCommaSeparatedHex(const std::vector<uint8_t>& data) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < data.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << "0x"
+            << std::hex << std::setw(2) << std::setfill('0')
+            << static_cast<int>(data[i]);
+    }
+    return oss.str();
+}
+
 class Lpf2HubServerCallbacks : public NimBLEServerCallbacks
 {
 
@@ -27,31 +41,24 @@ public:
     _lpf2HubEmulation = lpf2HubEmulation;
   }
 
-  void onConnect(NimBLEServer *pServer)
+  void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override
   {
     log_d("Device connected");
     _lpf2HubEmulation->isConnected = true;
+    pServer->updateConnParams(connInfo.getConnHandle(), 24, 48, 0, 60);
   };
 
-  void onDisconnect(NimBLEServer *pServer)
+  void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override
   {
-    log_d("Device disconnected");
+    log_d("Device disconnected, reason: %i", reason);
     _lpf2HubEmulation->isConnected = false;
+    _lpf2HubEmulation->isSubscripted = false;
     _lpf2HubEmulation->isPortInitialized = false;
   }
-
-  // This is required to make it working with BLE Scanner and PoweredUp on devices with Android <6.
-  // This seems to be not needed for Android >=6
-  // TODO: find out why this method helps. Maybe it goes about timeout?
-  void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc)
-  {
-    pServer->updateConnParams(desc->conn_handle, 24, 48, 0, 60);
-  };
 };
 
 class Lpf2HubCharacteristicCallbacks : public NimBLECharacteristicCallbacks
 {
-
   Lpf2HubEmulation *_lpf2HubEmulation;
 
 public:
@@ -60,14 +67,27 @@ public:
     _lpf2HubEmulation = lpf2HubEmulation;
   }
 
-  void onWrite(NimBLECharacteristic *pCharacteristic)
+  void onSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo, uint16_t subValue) override
   {
+    log_d("Client subscription status: %s (%d)", 
+          subValue == 0 ? "Un-Subscribed" : 
+          subValue == 1 ? "Notifications" : 
+          subValue == 2 ? "Indications" : 
+          subValue == 3 ? "Notifications and Indications" :
+          "unknown subscription dstatus",
+          subValue);
 
+    _lpf2HubEmulation->isSubscripted = subValue != 0;
+  }  
+
+  void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override
+  {
     std::string msgReceived = pCharacteristic->getValue();
 
     if (msgReceived.length() > 0)
     {
-      log_d("message received: %s", msgReceived.c_str());
+      log_d("message received (%d): %s", msgReceived.length(), LegoinoCommon::HexString(msgReceived).c_str());
+      log_d("message type: %d", msgReceived[(byte)MessageHeader::MESSAGE_TYPE]);
 
       // handle port mode information requests and respond dependent on the device type
       if (msgReceived[(byte)MessageHeader::MESSAGE_TYPE] == (byte)MessageType::PORT_MODE_INFORMATION_REQUEST)
@@ -93,111 +113,163 @@ public:
       // handle alert response (respond always with status OK)
       else if (msgReceived[(byte)MessageHeader::MESSAGE_TYPE] == (byte)MessageType::HUB_ALERTS)
       {
-        if (msgReceived[0x04] == 0x03)
+        byte alertType = msgReceived[0x03];
+        byte alertOperation = msgReceived[0x04];
+
+        if (alertOperation == 0x03)
         {
-          byte feedback[] = {0x06, 0x00, 0x03, msgReceived[0x03], 0x04, 0x00};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)alertType);
+          payload.push_back(0x04); // Alert Operation, Update (Upstream)
+          payload.push_back(0x00); // Alert Payload, Status OK
+          _lpf2HubEmulation->writeValue(MessageType::HUB_ALERTS, payload);
         }
       }
 
       // handle hub property requests and respond with the values of the member variables
       else if (msgReceived[(byte)MessageHeader::MESSAGE_TYPE] == (char)MessageType::HUB_PROPERTIES && msgReceived[(byte)HubPropertyMessage::OPERATION] == (byte)HubPropertyOperation::REQUEST_UPDATE_DOWNSTREAM)
       {
-
         if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::ADVERTISING_NAME)
         {
           std::string payload;
           payload.push_back((char)HubPropertyReference::ADVERTISING_NAME);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
           payload.append(_lpf2HubEmulation->getHubName());
           _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::HW_VERSION)
         {
-          byte feedback[] = {0x09, 0x00, 0x01, 0x04, 0x06, 0x00, 0x00, 0x00, 0x01};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::HW_VERSION);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.append(std::string{0x00, 0x00, 0x00, 0x01}); // 0.0.0.1
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::FW_VERSION)
         {
-          byte feedback[] = {0x09, 0x00, 0x01, 0x03, 0x06, 0x00, 0x00, 0x02, 0x11};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::FW_VERSION);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.append(std::string{0x00, 0x00, 0x02, 0x11});
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::RADIO_FIRMWARE_VERSION)
         {
-          byte feedback[] = {0x0c, 0x00, 0x01, 0x09, 0x06, 0x32, 0x5f, 0x30, 0x32, 0x5f, 0x30, 0x31};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::RADIO_FIRMWARE_VERSION);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.append(std::string{0x32, 0x5f, 0x30, 0x32, 0x5f, 0x30, 0x31}); // 2_02_01
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::MANUFACTURER_NAME)
         {
-          byte feedback[] = {0x14, 0x00, 0x01, 0x08, 0x06, 0x4c, 0x45, 0x47, 0x4f, 0x20, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x20, 0x41, 0x2f, 0x53};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::MANUFACTURER_NAME);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);          
+          payload.append(std::string{0x4c, 0x45, 0x47, 0x4f, 0x20, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x20, 0x41, 0x2f, 0x53}); // LEGO System A/S
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::BATTERY_TYPE)
         {
-          byte feedback[] = {0x06, 0x00, 0x01, 0x07, 0x06, (byte)_lpf2HubEmulation->getBatteryType()};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::BATTERY_TYPE);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.push_back((char)_lpf2HubEmulation->getBatteryType());
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::LEGO_WIRELESS_PROTOCOL_VERSION)
         {
-          byte feedback[] = {0x07, 0x00, 0x01, 0x0a, 0x06, 0x00, 0x03};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::LEGO_WIRELESS_PROTOCOL_VERSION);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.push_back((char)_lpf2HubEmulation->getBatteryType());
+          payload.append(std::string{0x00, 0x03}); // 0.3
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::PRIMARY_MAC_ADDRESS)
         {
-          byte feedback[] = {0x0b, 0x00, 0x01, 0x0d, 0x06, 0x90, 0x84, 0x2b, 0x03, 0x19, 0x7f};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::PRIMARY_MAC_ADDRESS);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          auto mac = ESP.getEfuseMac();
+          payload.push_back((char)((mac >> 40) & 0xFF));
+          payload.push_back((char)((mac >> 32) & 0xFF));
+          payload.push_back((char)((mac >> 24) & 0xFF));
+          payload.push_back((char)((mac >> 16) & 0xFF));
+          payload.push_back((char)((mac >> 8) & 0xFF));
+          payload.push_back((char)(mac & 0xFF));
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::BUTTON)
         {
-          byte feedback[] = {0x06, 0x00, 0x01, 0x02, 0x06, 0x00};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::BUTTON);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.push_back((char)ButtonState::RELEASED);
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::RSSI)
         {
-          byte feedback[] = {0x06, 0x00, 0x01, 0x05, 0x06, 0xc8};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::RSSI);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.push_back(0xc8);
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
         else if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (byte)HubPropertyReference::BATTERY_VOLTAGE)
         {
-          byte feedback[] = {0x06, 0x00, 0x01, 0x06, 0x06, 0x47};
-          _lpf2HubEmulation->pCharacteristic->setValue(feedback, sizeof(feedback));
-          _lpf2HubEmulation->pCharacteristic->notify();
+          std::string payload;
+          payload.push_back((char)HubPropertyReference::BATTERY_VOLTAGE);
+          payload.push_back((char)HubPropertyOperation::UPDATE_UPSTREAM);
+          payload.push_back(0x47); // 71%
+          _lpf2HubEmulation->writeValue(MessageType::HUB_PROPERTIES, payload);
         }
       }
       else if (msgReceived[(byte)MessageHeader::MESSAGE_TYPE] == (char)MessageType::HUB_PROPERTIES && msgReceived[(byte)HubPropertyMessage::OPERATION] == (byte)HubPropertyOperation::SET_DOWNSTREAM)
       {
         if (msgReceived[(byte)HubPropertyMessage::PROPERTY] == (char)HubPropertyReference::ADVERTISING_NAME)
         {
-          //5..length
+          // 5..length
           _lpf2HubEmulation->setHubName(msgReceived.substr(5, msgReceived.length() - 5), false);
           log_d("hub name: %s", _lpf2HubEmulation->getHubName().c_str());
         }
       }
 
-      //It's a port out command:
-      //execute and send feedback to the App
+      // It's a port out command:
+      // execute and send feedback to the App
       if (msgReceived[(byte)MessageHeader::MESSAGE_TYPE] == (char)MessageType::PORT_OUTPUT_COMMAND)
       {
-        //Reply to the App "Command excecuted"
-        byte msgPortCommandFeedbackReply[] = {0x05, 0x00, 0x82, 0x00, 0x0A};                                           //0x0A Command complete+buffer empty+idle
-        msgPortCommandFeedbackReply[(byte)PortOutputMessage::PORT_ID] = msgReceived[(byte)PortOutputMessage::PORT_ID]; //set the port_id
-        _lpf2HubEmulation->pCharacteristic->setValue(msgPortCommandFeedbackReply, sizeof(msgPortCommandFeedbackReply));
-        _lpf2HubEmulation->pCharacteristic->notify();
+        byte port = msgReceived[(byte)PortOutputMessage::PORT_ID];
+        byte startCompleteInfo = msgReceived[(byte)PortOutputMessage::STARTUP_AND_COMPLETION];
+        byte subCommand = msgReceived[(byte)PortOutputMessage::SUB_COMMAND];
 
-        if (msgReceived[(byte)PortOutputMessage::SUB_COMMAND] == 0x51) //OUT_PORT_CMD_WRITE_DIRECT
+        // Reply to the App "Command excecuted" if the App requests a feedback.
+        // https://lego.github.io/lego-ble-wireless-protocol-docs/index.html#port-output-command-feedback-format
+        if ((startCompleteInfo & 0x01) != 0) // Command feedback (status) requested
         {
+          std::string payload;
+          payload.push_back((char)port);
+          payload.push_back((byte)PortFeedbackMessage::BUFFER_EMPTY_AND_COMMAND_COMPLETED | (byte)PortFeedbackMessage::IDLE);
+          _lpf2HubEmulation->writeValue(MessageType::PORT_OUTPUT_COMMAND_FEEDBACK, payload);
+        }
+
+        if (subCommand == 0x51) // OUT_PORT_CMD_WRITE_DIRECT
+        {
+          byte commandMode = msgReceived[0x06];
+          byte power = msgReceived[0x07];
           if (_lpf2HubEmulation->writePortCallback != nullptr)
           {
-            _lpf2HubEmulation->writePortCallback(msgReceived[(byte)PortOutputMessage::PORT_ID], msgReceived[0x07]); //WRITE_DIRECT_VALUE
+            _lpf2HubEmulation->writePortCallback(msgReceived[(byte)PortOutputMessage::PORT_ID], power); // WRITE_DIRECT_VALUE
+          }
+        }
+        else if (subCommand == 0x07) // StartSpeed (Speed, MaxPower, UseProfile)
+        {
+          byte speed = msgReceived[0x06];
+          byte maxSpeed = msgReceived[0x07];
+          byte useProfile = msgReceived[0x08];
+          if (_lpf2HubEmulation->writePortCallback != nullptr)
+          {
+            _lpf2HubEmulation->writePortCallback(msgReceived[(byte)PortOutputMessage::PORT_ID], speed); // WRITE_DIRECT_VALUE
           }
         }
       }
@@ -205,9 +277,9 @@ public:
       if (msgReceived[(byte)MessageHeader::MESSAGE_TYPE] == (byte)MessageType::HUB_ACTIONS && msgReceived[3] == (byte)ActionType::SWITCH_OFF_HUB)
       {
         log_d("disconnect");
-        byte msgDisconnectionReply[] = {0x04, 0x00, 0x02, 0x31};
-        _lpf2HubEmulation->pCharacteristic->setValue(msgDisconnectionReply, sizeof(msgDisconnectionReply));
-        _lpf2HubEmulation->pCharacteristic->notify();
+        std::string payload;
+        payload.push_back(0x31);
+        _lpf2HubEmulation->writeValue(MessageType::HUB_ACTIONS, payload);
         delay(100);
         log_d("restart ESP");
         delay(1000);
@@ -216,7 +288,7 @@ public:
     }
   }
 
-  void onRead(NimBLECharacteristic *pCharacteristic)
+  void onRead(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override
   {
     log_d("read request");
   }
@@ -242,7 +314,7 @@ void Lpf2HubEmulation::attachDevice(byte port, DeviceType deviceType)
   payload.push_back((char)Event::ATTACHED_IO);
   payload.push_back((char)deviceType);
   std::string versionInformation = {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10};
-  payload.append(versionInformation); //version numbers
+  payload.append(versionInformation); // version numbers
   writeValue(MessageType::HUB_ATTACHED_IO, payload);
 
   Device newDevice = {port, (byte)deviceType};
@@ -308,7 +380,8 @@ void Lpf2HubEmulation::writeValue(MessageType messageType, std::string payload, 
   {
     pCharacteristic->notify();
   }
-  log_d("write message (%d): %s", message.length(), message);
+
+  log_d("write message (%d): %s", message.length(), LegoinoCommon::HexString(message).c_str());
 }
 
 void Lpf2HubEmulation::setHubButton(bool pressed)
@@ -467,7 +540,7 @@ void Lpf2HubEmulation::start()
 
 std::string Lpf2HubEmulation::getPortInformationPayload(DeviceType deviceType, byte port, byte informationType)
 {
-
+  // https://lego.github.io/lego-ble-wireless-protocol-docs/index.html#port-information-format
   std::string payload;
   payload.push_back(port);
   payload.push_back(informationType);
@@ -477,9 +550,26 @@ std::string Lpf2HubEmulation::getPortInformationPayload(DeviceType deviceType, b
     switch (informationType)
     {
     case 0x01:
+      // Information Type == MODE INFO (001)
+      // Capabilities (Uint8)
+      //   Bit 4..7 N/A
+      //   Bit 3    Logical Synchronizable
+      //   Bit 2    Logical Combinable
+      //   Bit 1    Input (seen from Hub)
+      //   Bit 0    Output (seen from Hub)
+      // Total number of port modes (Uint8)
+      // Available Input Port Modes (bitmask) (Uint16)
+      // Available Output Port Modes (bitmask) (Uint16)
+      // Response: Input (seen from Hub), 1 port mode, 0 input modes, 1 output mode
       payload.append("\x01\x01\x00\x00\x01\x00");
       break;
     case 0x02:
+      // Information Type == POSSIBLE MODE COMBINATIONS (002)
+      // Up to 8 times UWORD bit-fields showing the possible mode/value-sets 
+      // combinations for a given sensor. Some combinations cannot be used due to the 
+      // need for different H/W setup (mode affects each others, H/W switch- and 
+      // settling time etc.)
+      // see https://lego.github.io/lego-ble-wireless-protocol-docs/index.html#pos-m
       break;
     default:
       break;
@@ -490,9 +580,28 @@ std::string Lpf2HubEmulation::getPortInformationPayload(DeviceType deviceType, b
     switch (informationType)
     {
     case 0x01:
+      // Information Type == MODE INFO (001)
+      // Response: Input (seen from Hub), 2 port modes, 0 input modes, 3 output modes
       payload.append("\x01\x02\x00\x00\x03\x00");
       break;
     case 0x02:
+      // Information Type == POSSIBLE MODE COMBINATIONS (002)
+      break;
+    default:
+      break;
+    }
+  }
+  else if (deviceType == DeviceType::LIGHT)
+  {
+    switch (informationType)
+    {
+    case 0x01:
+      // Information Type == MODE INFO (001)
+      // Response: Input (seen from Hub), 1 port mode, 0 input modes, 1 output mode
+      payload.append(std::string{0x01, 0x01, 0x00, 0x00, 0x01, 0x00});
+      break;
+    case 0x02:
+      // Information Type == POSSIBLE MODE COMBINATIONS (002)
       break;
     default:
       break;
@@ -504,7 +613,7 @@ std::string Lpf2HubEmulation::getPortInformationPayload(DeviceType deviceType, b
 
 std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType deviceType, byte port, byte mode, byte modeInformationType)
 {
-
+  // https://lego.github.io/lego-ble-wireless-protocol-docs/index.html#port-mode-information-format
   std::string payload;
   payload.push_back(port);
   payload.push_back(mode);
@@ -512,63 +621,146 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
 
   if (deviceType == DeviceType::TRAIN_MOTOR)
   {
-
     if (mode == 0x00)
     {
       switch (modeInformationType)
       {
       case 0x00:
+        // Information Type == NAME (000)
+        // The maximum length is 11 chars NOT ASCIIZ terminated - length is decoded from total
+        // packet length. ONLY ASCII chars: 0x30.. 0x39, 0x41..0x5A, 0x5F and 0x61..0x7A are
+        // allowed.
+        // Format: Uint8[0..10]
+        // Response: LPF2-TRAIN
         payload.append("\x4C\x50\x46\x32\x2D\x54\x52\x41\x49\x4E\x00\x00");
         break;
       case 0x01:
+        // Information Type == RAW (001)
+        // The range for the raw (transmitted) signal, remember other ranges are used for scaling
+        // the value.
+        // Format: RawMin, RawMax [2 * 4 bytes [FLOATING POINT]]
+        // Response: -100 - 100
         payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
         break;
       case 0x02:
+        // Information Type == PCT (002)
+        // What % window should the RAW values be scaled to.
+        // Format: PctMin, PctMax [2 * 4 bytes [FLOATING POINT]]
+        // Response: -100 - 100
         payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
         break;
       case 0x03:
+        // Information Type == SI (003)
+        // As above
+        // Format: SiMin, SiMax [2 * 4 bytes [FLOATING POINT]]
+        // Response: -100 - 100
         payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
         break;
       case 0x04:
+        // Information Type == SYMBOL (004)
+        // The standard name for a given output.
+        // E.g. DEG for degrees. Normally shortened to max. 5 chars.
+        // Format: Uint8[0..4]
+        // Response: \0\0\0\0\0
         payload.append("\x00\x00\x00\x00\x00");
         break;
       case 0x05:
+        // Information Type == MAPPING (005)
+        // xxxxxxxx Input side
+        // Bit 7  Supports NULL value
+        // Bit 6  Supports Functional Mapping 2.0+
+        // Bit 5  N/A
+        // Bit 4  ABS (Absolute [min..max])
+        // Bit 3  REL (Relative [-1..1])
+        // Bit 2  DIS (Discrete [0, 1, 2, 3])
+        // Bit 1  N/A
+        // Bit 0  N/A
+        // yyyyyyyy Outpu side
+        // Bit 7  Supports NULL value
+        // Bit 6  Supports Functional Mapping 2.0+
+        // Bit 5  N/A
+        // Bit 4  ABS (Absolute [min..max])
+        // Bit 3  REL (Relative [-1..1])
+        // Bit 2  DIS (Discrete [0, 1, 2, 3])
+        // Bit 1  N/A
+        // Bit 0  N/A
+        // The roles are: The host of the sensor (even a simple and dumb black box) can
+        // then decide, what to do with the sensor without any setup (default mode 0 (zero).
+        // Using the LSB first (highest priority).
+        // Format: Uint16 xxxx xxxx yyyy yyyy
+        // Response: 0000000 00011000
         payload.append("\x00\x18");
         break;
       case 0x80:
+        // Information Type == VALUE FORMAT (128)
+        // Returns the Value Format. No of datasets, type and number of digits.
+        // Byte[0]  Number of datasets
+        // Byte[1]  Dataset type
+        //          00  8 bit
+        //          01  16 bit
+        //          10  32 bit
+        //          11  FLOAT
+        // Byte[2]  Total figures
+        // Byte[3]  Decimals if any
+        // Format: Uint8[4]
+        // Response: 1 dataset, 8 bit, 4 figures, 0 decimals
         payload.append("\x01\x00\x04\x00");
         break;
+      case 0x07:
+        // Information Type == MOTOR BIAS (007)
+        // Initial PWM percentage for a given motor to start running (is of course also depending
+        // of use case). 0 - 100 %
+        // Format: Uint8
+        break;
+      case 0x08:
+        // Information Type == CAPABILITY BITS (008)
+        // Sensor capabilities as bits. A total of 48 bits (6 bytes) can be retrieved from a sensor.
+        // For decoding see separate doc. Bytes sent as BIG endianness.
+        // Format: Uint8[6]
       default:
         break;
       }
     }
   }
-
-  if (deviceType == DeviceType::HUB_LED)
+  else if (deviceType == DeviceType::HUB_LED)
   {
     if (mode == 0x00)
     {
       switch (modeInformationType)
       {
       case 0x00:
+        // Information Type == NAME (000)
+        // Response: COL O
         payload.append("\x43\x4F\x4C\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
         break;
       case 0x01:
+        // Information Type == RAW (001)
+        // Response: 0 - 10
         payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
         break;
       case 0x02:
+        // Information Type == PCT (002)
+        // Response: 0 - 100
         payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42");
         break;
       case 0x03:
+        // Information Type == SI (003)
+        // Response: 0 - 10
         payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
         break;
       case 0x04:
+        // Information Type == SYMBOL (004)
+        // Response: \0\0\0\0\0
         payload.append("\x00\x00\x00\x00\x00");
         break;
       case 0x05:
+        // Information Type == MAPPING (005)
+        // Response: 00000000 01000100
         payload.append("\x00\x44");
         break;
       case 0x80:
+        // Information Type == VALUE FORMAT (128)
+        // Response: 1 dataset, 8 bit, 1 figure, 0 decimals
         payload.append("\x01\x00\x01\x00");
         break;
       default:
@@ -580,24 +772,169 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
       switch (modeInformationType)
       {
       case 0x00:
+        // Information Type == NAME (000)
+        // Response: RGB O
         payload.append("\x52\x47\x42\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
         break;
       case 0x01:
-        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43");
+        // Information Type == RAW (001)
+        // The range for the raw (transmitted) signal, remember other ranges are used for scaling
+        // the value.
+        // Format: RawMin, RawMax [2 * 4 bytes [FLOATING POINT]]
+        // Response: -100 - 100
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
         break;
       case 0x02:
-        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42");
+        // Information Type == PCT (002)
+        // What % window should the RAW values be scaled to.
+        // Format: PctMin, PctMax [2 * 4 bytes [FLOATING POINT]]
+        // Response: -100 - 100
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
         break;
       case 0x03:
-        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43");
+        // Information Type == SI (003)
+        // As above
+        // Format: SiMin, SiMax [2 * 4 bytes [FLOATING POINT]]
+        // Response: -100 - 100
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
         break;
       case 0x04:
+        // Information Type == SYMBOL (004)
+        // The standard name for a given output.
+        // E.g. DEG for degrees. Normally shortened to max. 5 chars.
+        // Format: Uint8[0..4]
+        // Response: \0\0\0\0\0
         payload.append("\x00\x00\x00\x00\x00");
         break;
       case 0x05:
+        // Information Type == MAPPING (005)
+        // xxxxxxxx Input side
+        // Bit 7  Supports NULL value
+        // Bit 6  Supports Functional Mapping 2.0+
+        // Bit 5  N/A
+        // Bit 4  ABS (Absolute [min..max])
+        // Bit 3  REL (Relative [-1..1])
+        // Bit 2  DIS (Discrete [0, 1, 2, 3])
+        // Bit 1  N/A
+        // Bit 0  N/A
+        // yyyyyyyy Outpu side
+        // Bit 7  Supports NULL value
+        // Bit 6  Supports Functional Mapping 2.0+
+        // Bit 5  N/A
+        // Bit 4  ABS (Absolute [min..max])
+        // Bit 3  REL (Relative [-1..1])
+        // Bit 2  DIS (Discrete [0, 1, 2, 3])
+        // Bit 1  N/A
+        // Bit 0  N/A
+        // The roles are: The host of the sensor (even a simple and dumb black box) can
+        // then decide, what to do with the sensor without any setup (default mode 0 (zero).
+        // Using the LSB first (highest priority).
+        // Format: Uint16 xxxx xxxx yyyy yyyy
+        // Response: 0000000 00011000
+        payload.append("\x00\x18");
+        break;
+      case 0x80:
+        // Information Type == VALUE FORMAT (128)
+        // Returns the Value Format. No of datasets, type and number of digits.
+        // Byte[0]  Number of datasets
+        // Byte[1]  Dataset type
+        //          00  8 bit
+        //          01  16 bit
+        //          10  32 bit
+        //          11  FLOAT
+        // Byte[2]  Total figures
+        // Byte[3]  Decimals if any
+        // Format: Uint8[4]
+        // Response: 1 dataset, 8 bit, 4 figures, 0 decimals
+        payload.append("\x01\x00\x04\x00");
+        break;
+      default:
+        break;
+      }
+    }
+  }
+  else if (deviceType == DeviceType::LIGHT)
+  {
+    if (mode == 0x00)
+    {
+      switch (modeInformationType)
+      {
+      case 0x00:
+        // Information Type == NAME (000)
+        // Response: COL O
+        payload.append("\x43\x4F\x4C\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
+        break;
+      case 0x01:
+        // Information Type == RAW (001)
+        // Response: 0 - 10
+        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
+        break;
+      case 0x02:
+        // Information Type == PCT (002)
+        // Response: 0 - 100
+        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42");
+        break;
+      case 0x03:
+        // Information Type == SI (003)
+        // Response: 0 - 10
+        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
+        break;
+      case 0x04:
+        // Information Type == SYMBOL (004)
+        // Response: \0\0\0\0\0
+        payload.append("\x00\x00\x00\x00\x00");
+        break;
+      case 0x05:
+        // Information Type == MAPPING (005)
+        // Response: 00000000 01000100
+        payload.append("\x00\x44");
+        break;
+      case 0x80:
+        // Information Type == VALUE FORMAT (128)
+        // Response: 1 dataset, 8 bit, 1 figure, 0 decimals
+        payload.append("\x01\x00\x01\x00");
+        break;
+      default:
+        break;
+      }
+    }
+    else if (mode == 0x01)
+    {
+      switch (modeInformationType)
+      {
+      case 0x00:
+        // Information Type == NAME (000)
+        // Response: RGB O
+        payload.append("\x52\x47\x42\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
+        break;
+      case 0x01:
+        // Information Type == RAW (001)
+        // Response: 0 - 255
+        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43");
+        break;
+      case 0x02:
+        // Information Type == PCT (002)
+        // Response: 0 - 100
+        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42");
+        break;
+      case 0x03:
+        // Information Type == SI (003)
+        // Response: 0 - 255
+        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43");
+        break;
+      case 0x04:
+        // Information Type == SYMBOL (004)
+        // Response: \0\0\0\0\0
+        payload.append("\x00\x00\x00\x00\x00");
+        break;
+      case 0x05:
+        // Information Type == MAPPING (005)
+        // Response: 00000000 00010000
         payload.append("\x00\x10");
         break;
       case 0x80:
+        // Information Type == VALUE FORMAT (128)
+        // Response: 3 datasets, 8 bit, 3 figures, 0 decimals
         payload.append("\x03\x00\x03\x00");
         break;
       default:
