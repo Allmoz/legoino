@@ -90,6 +90,7 @@ public:
 
   void attachDevice(byte port, DeviceType deviceType);
   void detachDevice(byte port);
+  void clearDevices();
   byte getDeviceTypeForPort(byte port);
 
   void writeValue(MessageType messageType, std::string payload, bool notify = true);

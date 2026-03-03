@@ -54,6 +54,8 @@ public:
     _lpf2HubEmulation->isConnected = false;
     _lpf2HubEmulation->isSubscripted = false;
     _lpf2HubEmulation->isPortInitialized = false;
+    _lpf2HubEmulation->clearDevices();
+    pServer->startAdvertising();
   }
 };
 
@@ -344,6 +346,11 @@ void Lpf2HubEmulation::detachDevice(byte port)
     }
   }
   numberOfConnectedDevices--;
+}
+
+void Lpf2HubEmulation::clearDevices()
+{
+  numberOfConnectedDevices = 0;
 }
 
 /**
