@@ -561,7 +561,7 @@ std::string Lpf2HubEmulation::getPortInformationPayload(DeviceType deviceType, b
       // Available Input Port Modes (bitmask) (Uint16)
       // Available Output Port Modes (bitmask) (Uint16)
       // Response: Input (seen from Hub), 1 port mode, 0 input modes, 1 output mode
-      payload.append("\x01\x01\x00\x00\x01\x00");
+      payload.append("\x01\x01\x00\x00\x01\x00", 6);
       break;
     case 0x02:
       // Information Type == POSSIBLE MODE COMBINATIONS (002)
@@ -582,7 +582,7 @@ std::string Lpf2HubEmulation::getPortInformationPayload(DeviceType deviceType, b
     case 0x01:
       // Information Type == MODE INFO (001)
       // Response: Input (seen from Hub), 2 port modes, 0 input modes, 3 output modes
-      payload.append("\x01\x02\x00\x00\x03\x00");
+      payload.append("\x01\x02\x00\x00\x03\x00", 6);
       break;
     case 0x02:
       // Information Type == POSSIBLE MODE COMBINATIONS (002)
@@ -598,7 +598,7 @@ std::string Lpf2HubEmulation::getPortInformationPayload(DeviceType deviceType, b
     case 0x01:
       // Information Type == MODE INFO (001)
       // Response: Input (seen from Hub), 1 port mode, 0 input modes, 1 output mode
-      payload.append(std::string{0x01, 0x01, 0x00, 0x00, 0x01, 0x00});
+      payload.append("\x01\x01\x00\x00\x01\x00", 6);
       break;
     case 0x02:
       // Information Type == POSSIBLE MODE COMBINATIONS (002)
@@ -632,7 +632,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // allowed.
         // Format: Uint8[0..10]
         // Response: LPF2-TRAIN
-        payload.append("\x4C\x50\x46\x32\x2D\x54\x52\x41\x49\x4E\x00\x00");
+        payload.append("\x4C\x50\x46\x32\x2D\x54\x52\x41\x49\x4E\x00\x00", 12);
         break;
       case 0x01:
         // Information Type == RAW (001)
@@ -640,21 +640,21 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // the value.
         // Format: RawMin, RawMax [2 * 4 bytes [FLOATING POINT]]
         // Response: -100 - 100
-        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42", 8);
         break;
       case 0x02:
         // Information Type == PCT (002)
         // What % window should the RAW values be scaled to.
         // Format: PctMin, PctMax [2 * 4 bytes [FLOATING POINT]]
         // Response: -100 - 100
-        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42", 8);
         break;
       case 0x03:
         // Information Type == SI (003)
         // As above
         // Format: SiMin, SiMax [2 * 4 bytes [FLOATING POINT]]
         // Response: -100 - 100
-        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42", 8);
         break;
       case 0x04:
         // Information Type == SYMBOL (004)
@@ -662,7 +662,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // E.g. DEG for degrees. Normally shortened to max. 5 chars.
         // Format: Uint8[0..4]
         // Response: \0\0\0\0\0
-        payload.append("\x00\x00\x00\x00\x00");
+        payload.append("\x00\x00\x00\x00\x00", 5);
         break;
       case 0x05:
         // Information Type == MAPPING (005)
@@ -689,7 +689,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // Using the LSB first (highest priority).
         // Format: Uint16 xxxx xxxx yyyy yyyy
         // Response: 0000000 00011000
-        payload.append("\x00\x18");
+        payload.append("\x00\x18", 2);
         break;
       case 0x80:
         // Information Type == VALUE FORMAT (128)
@@ -704,7 +704,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // Byte[3]  Decimals if any
         // Format: Uint8[4]
         // Response: 1 dataset, 8 bit, 4 figures, 0 decimals
-        payload.append("\x01\x00\x04\x00");
+        payload.append("\x01\x00\x04\x00", 4);
         break;
       case 0x07:
         // Information Type == MOTOR BIAS (007)
@@ -731,37 +731,37 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
       case 0x00:
         // Information Type == NAME (000)
         // Response: COL O
-        payload.append("\x43\x4F\x4C\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
+        payload.append("\x43\x4F\x4C\x20\x4F\x00\x00\x00\x00\x00\x00\x00", 12);
         break;
       case 0x01:
         // Information Type == RAW (001)
         // Response: 0 - 10
-        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
+        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41", 8);
         break;
       case 0x02:
         // Information Type == PCT (002)
         // Response: 0 - 100
-        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42");
+        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42", 8);
         break;
       case 0x03:
         // Information Type == SI (003)
         // Response: 0 - 10
-        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
+        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41", 8);
         break;
       case 0x04:
         // Information Type == SYMBOL (004)
         // Response: \0\0\0\0\0
-        payload.append("\x00\x00\x00\x00\x00");
+        payload.append("\x00\x00\x00\x00\x00", 5);
         break;
       case 0x05:
         // Information Type == MAPPING (005)
         // Response: 00000000 01000100
-        payload.append("\x00\x44");
+        payload.append("\x00\x44", 2);
         break;
       case 0x80:
         // Information Type == VALUE FORMAT (128)
         // Response: 1 dataset, 8 bit, 1 figure, 0 decimals
-        payload.append("\x01\x00\x01\x00");
+        payload.append("\x01\x00\x01\x00", 4);
         break;
       default:
         break;
@@ -774,7 +774,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
       case 0x00:
         // Information Type == NAME (000)
         // Response: RGB O
-        payload.append("\x52\x47\x42\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
+        payload.append("\x52\x47\x42\x20\x4F\x00\x00\x00\x00\x00\x00\x00", 12);
         break;
       case 0x01:
         // Information Type == RAW (001)
@@ -782,21 +782,21 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // the value.
         // Format: RawMin, RawMax [2 * 4 bytes [FLOATING POINT]]
         // Response: -100 - 100
-        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42", 8);
         break;
       case 0x02:
         // Information Type == PCT (002)
         // What % window should the RAW values be scaled to.
         // Format: PctMin, PctMax [2 * 4 bytes [FLOATING POINT]]
         // Response: -100 - 100
-        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42", 8);
         break;
       case 0x03:
         // Information Type == SI (003)
         // As above
         // Format: SiMin, SiMax [2 * 4 bytes [FLOATING POINT]]
         // Response: -100 - 100
-        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42");
+        payload.append("\x00\x00\xC8\xC2\x00\x00\xC8\x42", 8);
         break;
       case 0x04:
         // Information Type == SYMBOL (004)
@@ -804,7 +804,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // E.g. DEG for degrees. Normally shortened to max. 5 chars.
         // Format: Uint8[0..4]
         // Response: \0\0\0\0\0
-        payload.append("\x00\x00\x00\x00\x00");
+        payload.append("\x00\x00\x00\x00\x00", 5);
         break;
       case 0x05:
         // Information Type == MAPPING (005)
@@ -831,7 +831,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // Using the LSB first (highest priority).
         // Format: Uint16 xxxx xxxx yyyy yyyy
         // Response: 0000000 00011000
-        payload.append("\x00\x18");
+        payload.append("\x00\x18", 2);
         break;
       case 0x80:
         // Information Type == VALUE FORMAT (128)
@@ -846,7 +846,7 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
         // Byte[3]  Decimals if any
         // Format: Uint8[4]
         // Response: 1 dataset, 8 bit, 4 figures, 0 decimals
-        payload.append("\x01\x00\x04\x00");
+        payload.append("\x01\x00\x04\x00", 4);
         break;
       default:
         break;
@@ -862,37 +862,37 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
       case 0x00:
         // Information Type == NAME (000)
         // Response: COL O
-        payload.append("\x43\x4F\x4C\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
+        payload.append("\x43\x4F\x4C\x20\x4F\x00\x00\x00\x00\x00\x00\x00", 12);
         break;
       case 0x01:
         // Information Type == RAW (001)
         // Response: 0 - 10
-        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
+        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41", 8);
         break;
       case 0x02:
         // Information Type == PCT (002)
         // Response: 0 - 100
-        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42");
+        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42", 8);
         break;
       case 0x03:
         // Information Type == SI (003)
         // Response: 0 - 10
-        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41");
+        payload.append("\x00\x00\x00\x00\x00\x00\x20\x41", 8);
         break;
       case 0x04:
         // Information Type == SYMBOL (004)
         // Response: \0\0\0\0\0
-        payload.append("\x00\x00\x00\x00\x00");
+        payload.append("\x00\x00\x00\x00\x00", 5);
         break;
       case 0x05:
         // Information Type == MAPPING (005)
         // Response: 00000000 01000100
-        payload.append("\x00\x44");
+        payload.append("\x00\x44", 2);
         break;
       case 0x80:
         // Information Type == VALUE FORMAT (128)
         // Response: 1 dataset, 8 bit, 1 figure, 0 decimals
-        payload.append("\x01\x00\x01\x00");
+        payload.append("\x01\x00\x01\x00", 4);
         break;
       default:
         break;
@@ -905,37 +905,37 @@ std::string Lpf2HubEmulation::getPortModeInformationRequestPayload(DeviceType de
       case 0x00:
         // Information Type == NAME (000)
         // Response: RGB O
-        payload.append("\x52\x47\x42\x20\x4F\x00\x00\x00\x00\x00\x00\x00");
+        payload.append("\x52\x47\x42\x20\x4F\x00\x00\x00\x00\x00\x00\x00", 12);
         break;
       case 0x01:
         // Information Type == RAW (001)
         // Response: 0 - 255
-        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43");
+        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43", 8);
         break;
       case 0x02:
         // Information Type == PCT (002)
         // Response: 0 - 100
-        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42");
+        payload.append("\x00\x00\x00\x00\x00\x00\xC8\x42", 8);
         break;
       case 0x03:
         // Information Type == SI (003)
         // Response: 0 - 255
-        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43");
+        payload.append("\x00\x00\x00\x00\x00\x00\x7F\x43", 8);
         break;
       case 0x04:
         // Information Type == SYMBOL (004)
         // Response: \0\0\0\0\0
-        payload.append("\x00\x00\x00\x00\x00");
+        payload.append("\x00\x00\x00\x00\x00", 5);
         break;
       case 0x05:
         // Information Type == MAPPING (005)
         // Response: 00000000 00010000
-        payload.append("\x00\x10");
+        payload.append("\x00\x10", 2);
         break;
       case 0x80:
         // Information Type == VALUE FORMAT (128)
         // Response: 3 datasets, 8 bit, 3 figures, 0 decimals
-        payload.append("\x03\x00\x03\x00");
+        payload.append("\x03\x00\x03\x00", 4);
         break;
       default:
         break;
